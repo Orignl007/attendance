@@ -192,7 +192,7 @@
 
   <!-- ESTADO 1: Primeira vez -->
   <div id="view-setup">
-    <h1>Registo de Presença</h1>
+    <h1>Registro de Presença</h1>
     <p class="subtitle">Bem-vindo(a)! Insira o seu nome uma vez — será guardado para que as próximas presenças sejam automáticas.</p>
     <input type="text" id="name-input" placeholder="O seu nome completo" autocomplete="name" />
     <button class="primary" id="btn-submit" onclick="handleSetup()">Registar Presença</button>
@@ -208,18 +208,18 @@
   <!-- ESTADO 3: Sucesso -->
   <div id="view-success" class="hidden">
     <div class="success-icon">✓</div>
-    <h1>Presença Registada!</h1>
+    <h1>Presença Registrada!</h1>
     <div class="name-badge" id="success-name"></div>
     <p class="timestamp" id="success-time"></p>
     <button class="reset-link" onclick="resetName()">Não é você? Alterar nome</button>
   </div>
 
-  <!-- ESTADO 4: Já registado hoje -->
+  <!-- ESTADO 4: Já registrado hoje -->
   <div id="view-already" class="hidden">
     <div class="already-icon">⚠</div>
-    <h1>Já registado hoje!</h1>
+    <h1>Já registrado hoje!</h1>
     <div class="name-badge" id="already-name"></div>
-    <p class="subtitle" style="margin-top:12px;">A sua presença já foi registada hoje.<br>Volte amanhã para o próximo registo.</p>
+    <p class="subtitle" style="margin-top:12px;">A sua presença já foi registrada hoje.<br>Volte amanhã para o próximo registro.</p>
     <button class="reset-link" onclick="resetName()">Não é você? Alterar nome</button>
   </div>
 
@@ -253,7 +253,7 @@
     document.getElementById("success-name").textContent = name;
     const now = new Date();
     document.getElementById("success-time").textContent =
-      "Registado às " + now.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
+      "Registrado às " + now.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit" });
     show("view-success");
   }
 

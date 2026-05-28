@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Class Attendance</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f4ff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 20px;
+      padding: 40px 32px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      text-align: center;
+    }
+
+    .icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #6b7280;
+      margin-bottom: 32px;
+      line-height: 1.5;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      font-size: 16px;
+      outline: none;
+      transition: border-color 0.2s;
+      color: #1a1a2e;
+    }
+
+    input[type="text"]:focus {
+      border-color: #4f46e5;
+    }
+
+    button.primary {
+      width: 100%;
+      margin-top: 14px;
+      padding: 15px;
+      background: #4f46e5;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    button.primary:active {
+      transform: scale(0.98);
+    }
+
+    button.primary:hover {
+      background: #4338ca;
+    }
+
+    button.primary:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+
+    .success-icon {
+      width: 72px;
+      height: 72px;
+      background: #ecfdf5;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 36px;
+      animation: pop 0.4s ease;
+    }
+
+    @keyframes pop {
+      0%   { transform: scale(0); opacity: 0; }
+      70%  { transform: scale(1.15); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .name-badge {
+      display: inline-block;
+      background: #f0f4ff;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #4f46e5;
+      margin: 12px 0 6px;
+    }
+
+    .timestamp {
+      font-size: 13px;
+      color: #9ca3af;
+      margin-bottom: 28px;
+    }
+
+    .reset-link {
+      font-size: 13px;
+      color: #9ca3af;
+      cursor: pointer;
+      text-decoration: underline;
+      background: none;
+      border: none;
+    }
+
+    .reset-link:hover {
+      color: #4f46e5;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #e5e7eb;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- STATE 1: First-time name entry -->
+  <div id="view-setup">
+    <div class="icon">📋</div>
+    <h1>Class Attendance</h1>
+    <p class="subtitle">Enter your name once — it'll be saved so future check-ins are automatic.</p>
+    <input type="text" id="name-input" placeholder="Your full name" autocomplete="name" />
+    <button class="primary" id="btn-submit" onclick="handleSetup()">Mark Attendance</button>
+  </div>
+
+  <!-- STATE 2: Submitting -->
+  <div id="view-submitting" class="hidden">
+    <div class="spinner"></div>
+    <h1>Marking attendance…</h1>
+    <p class="subtitle">Just a moment.</p>
+  </div>
+
+  <!-- STATE 3: Success -->
+  <div id="view-success" class="hidden">
+    <div class="success-icon">✓</div>
+    <h1>Attendance Marked!</h1>
+    <div class="name-badge" id="success-name"></div>
+    <p class="timestamp" id="success-time"></p>
+    <button class="reset-link" onclick="resetName()">Not you? Change name</button>
+  </div>
+
+</div>
+
+<script>
+  const FORM_URL  = 'https://docs.google.com/forms/d/e/1FAIpQLSdTDs-2JEvntcuNaEyzi7jSpqiwYl6VENojDTuPjGlc9K3JQQ/formResponse';
+  const ENTRY     = 'entry.2083754856';
+  const STORE_KEY = 'attendance_name';
+
+  function show(id) {
+    ['view-setup','view-submitting','view-success'].forEach(v =>
+      document.getElementById(v).classList.toggle('hidden', v !== id)
+    );
+  }
+
+  async function submitToForm(name) {
+    const body = new FormData();
+    body.append(ENTRY, name);
+    // no-cors: request fires but response is opaque — that's fine, Forms still records it
+    await fetch(FORM_URL, { method: 'POST', mode: 'no-cors', body });
+  }
+
+  async function markAttendance(name) {
+    show('view-submitting');
+    try { await submitToForm(name); } catch (_) {}
+    // Show success
+    document.getElementById('success-name').textContent = name;
+    document.getElementById('success-time').textContent =
+      'Submitted at ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    show('view-success');
+  }
+
+  async function handleSetup() {
+    const input = document.getElementById('name-input');
+    const name  = input.value.trim();
+    if (!name) { input.focus(); input.style.borderColor = '#ef4444'; return; }
+    input.style.borderColor = '';
+    localStorage.setItem(STORE_KEY, name);
+    await markAttendance(name);
+  }
+
+  function resetName() {
+    localStorage.removeItem(STORE_KEY);
+    document.getElementById('name-input').value = '';
+    show('view-setup');
+  }
+
+  // On load: if name already saved, auto-submit immediately
+  window.addEventListener('load', async () => {
+    const saved = localStorage.getItem(STORE_KEY);
+    if (saved) {
+      await markAttendance(saved);
+    }
+    // Allow Enter key on setup screen
+    document.getElementById('name-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') handleSetup();
+    });
+  });
+</script>
+
+</body>
+</html>

@@ -154,6 +154,19 @@
 
     .reset-link:hover { color: #1a3ab8; }
 
+    .already-icon {
+      width: 72px;
+      height: 72px;
+      background: #fffbeb;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      font-size: 34px;
+      border: 3px solid #f59e0b;
+    }
+
     .spinner {
       width: 40px;
       height: 40px;
@@ -201,14 +214,28 @@
     <button class="reset-link" onclick="resetName()">Não é você? Alterar nome</button>
   </div>
 
+  <!-- ESTADO 4: Já registado hoje -->
+  <div id="view-already" class="hidden">
+    <div class="already-icon">⚠</div>
+    <h1>Já registado hoje!</h1>
+    <div class="name-badge" id="already-name"></div>
+    <p class="subtitle" style="margin-top:12px;">A sua presença já foi registada hoje.<br>Volte amanhã para o próximo registo.</p>
+    <button class="reset-link" onclick="resetName()">Não é você? Alterar nome</button>
+  </div>
+
 </div>
 <script>
   const FORM_URL  = "https://docs.google.com/forms/d/e/1FAIpQLSdTDs-2JEvntcuNaEyzi7jSpqiwYl6VENojDTuPjGlc9K3JQQ/formResponse";
   const ENTRY     = "entry.2083754856";
-  const STORE_KEY = "attendance_name";
+  const NAME_KEY  = "attendance_name";
+  const DATE_KEY  = "attendance_date";
+
+  function today() {
+    return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+  }
 
   function show(id) {
-    ["view-setup","view-submitting","view-success"].forEach(v =>
+    ["view-setup","view-submitting","view-success","view-already"].forEach(v =>
       document.getElementById(v).classList.toggle("hidden", v !== id)
     );
   }
@@ -222,6 +249,7 @@
   async function markAttendance(name) {
     show("view-submitting");
     try { await submitToForm(name); } catch (_) {}
+    localStorage.setItem(DATE_KEY, today());
     document.getElementById("success-name").textContent = name;
     const now = new Date();
     document.getElementById("success-time").textContent =
@@ -229,24 +257,38 @@
     show("view-success");
   }
 
+  function showAlready(name) {
+    document.getElementById("already-name").textContent = name;
+    show("view-already");
+  }
+
   async function handleSetup() {
     const input = document.getElementById("name-input");
     const name  = input.value.trim();
     if (!name) { input.focus(); input.style.borderColor = "#ef4444"; return; }
     input.style.borderColor = "";
-    localStorage.setItem(STORE_KEY, name);
+    localStorage.setItem(NAME_KEY, name);
     await markAttendance(name);
   }
 
   function resetName() {
-    localStorage.removeItem(STORE_KEY);
+    localStorage.removeItem(NAME_KEY);
+    localStorage.removeItem(DATE_KEY);
     document.getElementById("name-input").value = "";
     show("view-setup");
   }
 
   window.addEventListener("load", async () => {
-    const saved = localStorage.getItem(STORE_KEY);
-    if (saved) { await markAttendance(saved); }
+    const name      = localStorage.getItem(NAME_KEY);
+    const lastDate  = localStorage.getItem(DATE_KEY);
+
+    if (name) {
+      if (lastDate === today()) {
+        showAlready(name);          // already submitted today — block
+      } else {
+        await markAttendance(name); // new day — auto-submit
+      }
+    }
     document.getElementById("name-input").addEventListener("keydown", e => {
       if (e.key === "Enter") handleSetup();
     });

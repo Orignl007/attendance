@@ -180,6 +180,48 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .hidden { display: none; }
+
+    /* typeahead — o aluno seleciona o nome registrado */
+    .name-wrap { position: relative; }
+
+    .suggest-box {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background: white;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      max-height: 224px;
+      overflow-y: auto;
+      z-index: 10;
+      text-align: left;
+    }
+
+    .suggest-item {
+      padding: 13px 16px;
+      font-size: 15px;
+      color: #1a1a2e;
+      cursor: pointer;
+      border-bottom: 1px solid #f3f4f6;
+    }
+
+    .suggest-item:last-child { border-bottom: none; }
+    .suggest-item:hover, .suggest-item.active { background: #eef3ff; color: #1a3ab8; }
+
+    .suggest-empty {
+      padding: 13px 16px;
+      font-size: 13.5px;
+      color: #9ca3af;
+    }
+
+    .pick-hint {
+      font-size: 12.5px;
+      color: #ef4444;
+      margin-top: 8px;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -193,8 +235,12 @@
   <!-- ESTADO 1: Primeira vez -->
   <div id="view-setup">
     <h1>Registro de Presença</h1>
-    <p class="subtitle">Bem-vindo(a)! Insira o seu nome uma vez — será guardado para que as próximas presenças sejam automáticas.</p>
-    <input type="text" id="name-input" placeholder="O seu nome completo" autocomplete="name" />
+    <p class="subtitle">Bem-vindo(a)! Digite e <b>selecione o seu nome na lista</b> — será guardado para que as próximas presenças sejam automáticas.</p>
+    <div class="name-wrap">
+      <input type="text" id="name-input" placeholder="Digite o seu nome…" autocomplete="off" autocapitalize="words" />
+      <div id="suggest" class="suggest-box hidden"></div>
+    </div>
+    <p class="pick-hint" id="pick-hint">Selecione o seu nome na lista.</p>
     <button class="primary" id="btn-submit" onclick="handleSetup()">Registrar Presença</button>
   </div>
 
@@ -230,6 +276,53 @@
   const NAME_KEY  = "attendance_name";
   const DATE_KEY  = "attendance_date";
 
+  // Lista de alunos registrados (roster.json, publicado pelo BARAH). O aluno
+  // SELECIONA o nome — nada de nomes digitados de forma diferente do registro.
+  let ROSTER = [];           // nomes canônicos
+  let rosterReady = false;   // false ⇒ fallback: aceita texto livre (nunca bloquear presença)
+  let selectedName = "";     // só definido ao escolher da lista
+
+  function norm(s) {
+    return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+  }
+
+  async function loadRoster() {
+    try {
+      const r = await fetch("./roster.json?v=" + today(), { cache: "no-store" });
+      const data = await r.json();
+      if (Array.isArray(data.students) && data.students.length) {
+        ROSTER = data.students;
+        rosterReady = true;
+      }
+    } catch (_) { /* offline/erro ⇒ segue em texto livre */ }
+  }
+
+  function matches(q) {
+    const nq = norm(q);
+    if (!nq) return [];
+    return ROSTER.filter(n => norm(n).includes(nq)).slice(0, 8);
+  }
+
+  function renderSuggest(items, q) {
+    const box = document.getElementById("suggest");
+    if (!rosterReady || !q) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+    if (!items.length) {
+      box.innerHTML = '<div class="suggest-empty">Nenhum aluno encontrado — verifique a grafia ou fale com a secretaria.</div>';
+    } else {
+      box.innerHTML = items.map(n => `<div class="suggest-item" data-name="${n.replace(/"/g, "&quot;")}">${n}</div>`).join("");
+    }
+    box.classList.remove("hidden");
+  }
+
+  function pick(name) {
+    selectedName = name;
+    const input = document.getElementById("name-input");
+    input.value = name;
+    input.style.borderColor = "#16a34a";
+    document.getElementById("suggest").classList.add("hidden");
+    document.getElementById("pick-hint").style.display = "none";
+  }
+
   function today() {
     return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
   }
@@ -264,9 +357,29 @@
 
   async function handleSetup() {
     const input = document.getElementById("name-input");
-    const name  = input.value.trim();
+    const hint  = document.getElementById("pick-hint");
+    let name    = input.value.trim();
     if (!name) { input.focus(); input.style.borderColor = "#ef4444"; return; }
+
+    if (rosterReady) {
+      // exige um nome REGISTRADO: o selecionado, um match exato, ou o único match
+      if (selectedName && norm(name) === norm(selectedName)) {
+        name = selectedName;
+      } else {
+        const exact = ROSTER.find(n => norm(n) === norm(name));
+        const m = matches(name);
+        if (exact) name = exact;
+        else if (m.length === 1) name = m[0];
+        else {
+          renderSuggest(m, name);
+          input.style.borderColor = "#ef4444";
+          hint.style.display = "block";
+          return; // não envia texto livre enquanto a lista funciona
+        }
+      }
+    }
     input.style.borderColor = "";
+    hint.style.display = "none";
     localStorage.setItem(NAME_KEY, name);
     await markAttendance(name);
   }
@@ -279,18 +392,41 @@
   }
 
   window.addEventListener("load", async () => {
+    await loadRoster();
     const name      = localStorage.getItem(NAME_KEY);
     const lastDate  = localStorage.getItem(DATE_KEY);
 
     if (name) {
-      if (lastDate === today()) {
+      // dispositivo com nome antigo NÃO registrado (grafia errada): pede pra
+      // selecionar uma vez da lista — cura o erro de digitação de vez.
+      if (rosterReady && !ROSTER.some(n => norm(n) === norm(name))) {
+        localStorage.removeItem(NAME_KEY);
+        const input = document.getElementById("name-input");
+        input.value = name;
+        renderSuggest(matches(name), name);
+        document.getElementById("pick-hint").style.display = "block";
+      } else if (lastDate === today()) {
         showAlready(name);          // already submitted today — block
       } else {
         await markAttendance(name); // new day — auto-submit
       }
     }
-    document.getElementById("name-input").addEventListener("keydown", e => {
-      if (e.key === "Enter") handleSetup();
+
+    const input = document.getElementById("name-input");
+    input.addEventListener("input", () => {
+      selectedName = "";
+      input.style.borderColor = "";
+      renderSuggest(matches(input.value.trim()), input.value.trim());
+    });
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); handleSetup(); }
+    });
+    document.getElementById("suggest").addEventListener("click", e => {
+      const item = e.target.closest(".suggest-item");
+      if (item) pick(item.dataset.name);
+    });
+    document.addEventListener("click", e => {
+      if (!e.target.closest(".name-wrap")) document.getElementById("suggest").classList.add("hidden");
     });
   });
 </script>

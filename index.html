@@ -242,6 +242,26 @@
     </div>
     <p class="pick-hint" id="pick-hint">Selecione o seu nome na lista.</p>
     <button class="primary" id="btn-submit" onclick="handleSetup()">Registrar Presença</button>
+    <button class="reset-link" onclick="showNew()">Não encontrou o seu nome? Cadastrar</button>
+  </div>
+
+  <!-- ESTADO 1b: Cadastrar um nome novo (vai para aprovação da secretaria) -->
+  <div id="view-new" class="hidden">
+    <h1>Cadastrar na turma</h1>
+    <p class="subtitle">Digite o seu <b>nome completo</b>. A sua presença de hoje já fica registrada e a secretaria confirma a sua matrícula na turma.</p>
+    <input type="text" id="new-name-input" placeholder="Nome completo" autocomplete="name" autocapitalize="words" />
+    <p class="pick-hint" id="new-hint">Digite o nome e o sobrenome.</p>
+    <button class="primary" onclick="handleNew()">Enviar para aprovação</button>
+    <button class="reset-link" onclick="show('view-setup')">Voltar à lista</button>
+  </div>
+
+  <!-- ESTADO 3b: Cadastro enviado, aguardando aprovação -->
+  <div id="view-pending" class="hidden">
+    <div class="already-icon">⏳</div>
+    <h1>Cadastro enviado!</h1>
+    <div class="name-badge" id="pending-name"></div>
+    <p class="subtitle" style="margin-top:12px;">A sua presença de hoje foi registrada.<br>A secretaria vai confirmar a sua matrícula na turma.</p>
+    <button class="reset-link" onclick="resetName()">Não é você? Alterar nome</button>
   </div>
 
   <!-- ESTADO 2: A enviar -->
@@ -275,6 +295,7 @@
   const ENTRY     = "entry.2083754856";
   const NAME_KEY  = "attendance_name";
   const DATE_KEY  = "attendance_date";
+  const PEND_KEY  = "attendance_pending";  // cadastrou-se e aguarda aprovação
 
   // Lista de alunos registrados (roster.json, publicado pelo BARAH). O aluno
   // SELECIONA o nome — nada de nomes digitados de forma diferente do registro.
@@ -328,9 +349,48 @@
   }
 
   function show(id) {
-    ["view-setup","view-submitting","view-success","view-already"].forEach(v =>
-      document.getElementById(v).classList.toggle("hidden", v !== id)
-    );
+    ["view-setup","view-new","view-submitting","view-success","view-already","view-pending"]
+      .forEach(v => document.getElementById(v).classList.toggle("hidden", v !== id));
+  }
+
+  /** Abre o cadastro de um nome novo, já herdando o que foi digitado. */
+  function showNew() {
+    const typed = document.getElementById("name-input").value.trim();
+    const input = document.getElementById("new-name-input");
+    input.value = typed;
+    document.getElementById("new-hint").style.display = "none";
+    input.style.borderColor = "";
+    show("view-new");
+    input.focus();
+  }
+
+  /** Cadastro: envia o nome para a chamada (fica pendente até a secretaria
+   *  aprovar a matrícula no BARAH). Exige nome + sobrenome. */
+  async function handleNew() {
+    const input = document.getElementById("new-name-input");
+    const hint  = document.getElementById("new-hint");
+    const name  = input.value.trim().replace(/\s+/g, " ");
+    if (name.split(" ").length < 2 || name.length < 5) {
+      input.style.borderColor = "#ef4444";
+      hint.style.display = "block";
+      input.focus();
+      return;
+    }
+    // Já está na lista? Então não é cadastro — trata como aluno registrado.
+    if (rosterReady) {
+      const exact = ROSTER.find(n => norm(n) === norm(name));
+      if (exact) {
+        localStorage.setItem(NAME_KEY, exact);
+        localStorage.removeItem(PEND_KEY);
+        await markAttendance(exact);
+        return;
+      }
+    }
+    input.style.borderColor = "";
+    hint.style.display = "none";
+    localStorage.setItem(NAME_KEY, name);
+    localStorage.setItem(PEND_KEY, "1");   // ainda não aprovado
+    await markAttendance(name);
   }
 
   async function submitToForm(name) {
@@ -343,6 +403,13 @@
     show("view-submitting");
     try { await submitToForm(name); } catch (_) {}
     localStorage.setItem(DATE_KEY, today());
+    // Cadastro ainda não aprovado → estado "aguardando" (a presença já foi
+    // enviada; o BARAH aplica as marcas assim que a matrícula for aprovada).
+    if (localStorage.getItem(PEND_KEY) === "1") {
+      document.getElementById("pending-name").textContent = name;
+      show("view-pending");
+      return;
+    }
     document.getElementById("success-name").textContent = name;
     const now = new Date();
     document.getElementById("success-time").textContent =
@@ -387,6 +454,7 @@
   function resetName() {
     localStorage.removeItem(NAME_KEY);
     localStorage.removeItem(DATE_KEY);
+    localStorage.removeItem(PEND_KEY);
     document.getElementById("name-input").value = "";
     show("view-setup");
   }
@@ -397,9 +465,16 @@
     const lastDate  = localStorage.getItem(DATE_KEY);
 
     if (name) {
+      const onRoster = rosterReady && ROSTER.some(n => norm(n) === norm(name));
+      // Cadastro aprovado pela secretaria → já está na lista: limpa o pendente.
+      if (onRoster) localStorage.removeItem(PEND_KEY);
+      const pending = localStorage.getItem(PEND_KEY) === "1";
+
       // dispositivo com nome antigo NÃO registrado (grafia errada): pede pra
-      // selecionar uma vez da lista — cura o erro de digitação de vez.
-      if (rosterReady && !ROSTER.some(n => norm(n) === norm(name))) {
+      // selecionar uma vez da lista — cura o erro de digitação de vez. Quem se
+      // cadastrou (pending) NÃO é incomodado: segue enviando a presença todo
+      // dia, e o BARAH aplica as marcas quando a matrícula for aprovada.
+      if (rosterReady && !onRoster && !pending) {
         localStorage.removeItem(NAME_KEY);
         const input = document.getElementById("name-input");
         input.value = name;
